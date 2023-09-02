@@ -1,0 +1,46 @@
+<input type="file" id="file-input" />
+<h3>Contents of the file:</h3>
+<pre id="file-content"></pre>
+
+<script>
+function hex2(dec) {
+	return ("00" + dec.toString(16)).substr(-2)
+}
+
+function hex4(dec) {
+	return ("0000" + dec.toString(16)).substr(-4)
+}
+	
+function readSingleFile(e) {
+  var file = e.target.files[0];
+  if (!file) {
+    return;
+  }
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var contents = e.target.result;
+    displayContents(contents);
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function displayContents(contents) {
+  var element = document.getElementById('file-content');
+  const view = new Uint8Array(contents)
+  var str
+  for (i=0; i<view.byteLength;i++) {
+	if (i==0) {
+		str="ROM=\\\n\"" + hex4(i) + " "
+	}
+	else
+	if (i%16==0) str += "\\n\" + \n\"" + hex4(i) + " "
+	str += hex2(view[i]) + " "
+  }
+  str += "\"\n"
+  element.textContent = str + "\n("+ contents.byteLength +")\n";
+}
+
+document.getElementById('file-input')
+  .addEventListener('change', readSingleFile, false);
+ </script>
+  
