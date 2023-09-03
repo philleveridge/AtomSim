@@ -162,13 +162,14 @@ Error
 	
 	function get_byte(addr) 
 	{
-		if (addr >= 0x2900 && addr< 0x8000)
-		{
+		//if (addr >= 0x2900 && addr< 0x8000)
+		//{
 			// expansion RAM
-			debug_out("Atom RAM expanison - "+hex4(addr))
-			return 0
-		}
-		else if (addr >= 0xb000 && addr< 0xb7ff) 
+		//	debug_out("Atom RAM expanison - "+hex4(addr))
+		//	return 0
+		//}
+		//else 
+		if (addr >= 0xb000 && addr< 0xb7ff) 
 		{
 			return get_byte_8255(addr)
 		} 		
@@ -510,10 +511,65 @@ Error
 			}			
 			print_mon("bits (" + bitstream.length + ")\n")
 		}
+		else if (r[0]=="FLOAD") {
+			// put atomfile directly in to memory at TOP-2
+			print_mon("File ("+AtomFile.length+")\n")
+			
+			var TOP = mem[0xd] + (	mem[0xe] <<8 ) //msb			
+			var addr=TOP-2
+			var ld=false
+			for (var i=4; i<AtomFile.length; i++)
+			{
+				var b=AtomFile[i]
+				if (!ld) {
+					print_mon(i+" "+String.fromCharCode(b) +"\n")
+					if (b==0x0d) {ld=true;i+= 8; }
+				}
+				else {
+					print_mon(hex4(addr)+" "+b+"\n")
+					mem[addr]=b
+					addr += 1
+				}				
+			}	
+			// set top
+			mem[0xd] = (addr) & 0xff 		//lsb
+			mem[0xe] = ((addr) & 0xff00)>>8 //msb
+		}
+		else if (r[0]=="FSAVE") {
+			// create atomfile directly from memory at TOP
+			var TOP = mem[0xd] + (	mem[0xe] <<8 ) //msb	
+			
+			if (TOP > 0x81ff)
+				addr=0x8200
+			else
+				addr=0x2900
+				
+			var s=""
+			if (r.length<2) N="X"; else N=r[1]
+			for (i=0; i<N.length; i++) {
+				s += hex2(N.charCodeAt(i)) + " "
+			}
+			s += "0d 50 00 00 1c c2 b2 82 00 "																							
+			while (true) {
+				var b=mem[addr]
+				addr += 1
+				s += hex2(b) + " "
+				if (b==0xff) {
+					s += "00"  // checksum ?
+					break;
+				}
+			}
+			
+			/* save as text file */
+			const link = document.querySelector('a.dynamic');
+			link.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(s));
+			link.setAttribute('download', N + `.txt`);
+			
+		}
 		else if (r[0]=="TAPE") 	{
 		
 			print_mon("Tape ("+datastream.length+")\n")
-			if (datastream.length>1)  {
+			if (datastream.length>1)  { 
 				AtomFile = cvtstream2file(datastream)
 			}
 			print_mon("File ("+AtomFile.length+")\n")

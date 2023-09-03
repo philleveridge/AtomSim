@@ -118,11 +118,11 @@ function isLabel(str) {
 	if (str != "" && str.length>0)
 	{
 		var ch= str.substr(0,1)
-		if ((ch>='a' && ch <='f') || (ch >='A' && ch <= 'F')) {
+		if ((ch>='a' && ch <='z') || (ch >='A' && ch <= 'Z')) {
 			for (i=1; i<str.length; i++)
 			{
 				var ch = str.substr(i,1)
-				if ((ch>='0' && ch<= '9') || (ch>='a' && ch <='f') || (ch >='A' && ch <= 'F'))
+				if ((ch>='0' && ch<= '9') || (ch>='a' && ch <='z') || (ch >='A' && ch <= 'Z'))
 					;
 				else
 					return false
@@ -175,7 +175,7 @@ function str2num(str) {
 			else if (ch >='A' && ch <= 'F')
 				n=n*16+(cc-65)+10;
 			else
-				return 0
+					return 0
 		}
 		return n
 	}
@@ -193,9 +193,7 @@ function assemble(mloc, str, pass=2) {
 		return mloc
 	txt = str.split(" ")
 	for (i=0; i<txt.length; i++) {
-		if (txt[i]== "" || txt[i]=="\t")
-			continue
-		
+			
 		if (txt[i].substr(-1)==":") {
 			/* label: */
 			// store NVP   label=mloc
@@ -219,19 +217,23 @@ function assemble(mloc, str, pass=2) {
 			ORG = str2num(txt[i+1])
 			return ORG
 		}
-		var op,mb			
+		var op,mb	
+
+		if (txt[i]== "" || txt[i]=="\t")
+			continue
+		
 		z = checkins(txt[i])
 		if (z >=0 ) {	
 			// legal instruction ILIST[z]
 			if (ILIST[z].length==2) {
-				put_byte(mloc,ILIST[z][1])
+				if (pass==2) put_byte(mloc,ILIST[z][1])
 				mloc += 1
 			}
 			else {
 				// get valid addressing modes
 				mods=ILIST[z][ILIST[z].length-1]
 				s=txt[i+1] 
-				b=isNumeric(s)
+				b=isNumeric(s) || (pass==1 && isLabel(s))
 				bc=0
 				debug_out(ILIST[z][0] +"=" + mods + "(" + s +")")
 				for (c=0; c<mods.length; c++)
@@ -319,13 +321,13 @@ function assemble(mloc, str, pass=2) {
 					}
 					if (bc>0) {
 						op =ILIST[z][c+1]
-						put_byte(mloc,op)
+						if (pass==2) put_byte(mloc,op)
 						mloc += 1
 						if (bc>1) {
-							put_byte(mloc,mb&0xff)
+							if (pass==2) put_byte(mloc,mb&0xff)
 							mloc += 1
 							if (bc > 2) {
-								put_byte(mloc,(mb&0xff00)>>8)
+								if (pass==2) put_byte(mloc,(mb&0xff00)>>8)
 								mloc += 1
 							}
 						}
@@ -339,7 +341,7 @@ function assemble(mloc, str, pass=2) {
 		else
 			mloc = -1
 		
-		i=txt.length
+		i=txt.length // end loop
 	}
 	return mloc
 }
@@ -423,18 +425,24 @@ function loadassemble(str, n) {
 	var st=str.split("\n")
 	
 	q=n
+	
+	labels={} // reset dictionary
+	
 	print_mon("1st pass\n")
 	for (var j=0; j<st.length; j++) 
 	{
 		// 1st pass
-		var q = assemble(q, st[j])
+		var q = assemble(q, st[j], 1)
 	}	
+	
+	for (var key in labels)
+		print_mon(key +"... "+ labels[key]+"\n")
 	
 	print_mon("2nd pass\n")
 	for (var j=0; j<st.length; j++) 
 	{
 		// 2nd pass
-		var q = assemble(n, st[j])
+		var q = assemble(n, st[j], 2)
 		if (q < 0) {
 			print_mon("ASSMB ERROR line " + j +"\n")
 			return			
