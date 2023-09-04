@@ -274,6 +274,8 @@ function put_byte_8255(addr, v)
 		GM=((v&0b11110000)>>4)
 		KR=(v&0b00001111)
 		//debug_out("Set Graphic mode="+GM+" Set keybd row="+KR)
+
+		set_graphics_mode(GM)
 		PORTA = v		
 		return v
 	}	

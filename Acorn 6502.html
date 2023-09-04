@@ -24,12 +24,14 @@
 <tbody>
 <tr tabindex=0 id=kscreen>
 <td class="teletext">
-<div id=VDU class="teletext">
-Error    
-<input type="text" id="tableEventShifter" style="position:absolute;z-index: -10;">    
-</div>
-</td></tr></tbody>
+	<div id=VDU class="teletext">TEXT SCREEN</div>
+	<canvas width="500" height="300" class="myCanvas" style="display: none">Atom Graphics screen</canvas>
+</td>
+</tr>
+</tbody>
 </table>
+
+
 <b>
 <br>
 <br>
@@ -57,6 +59,8 @@ Error
 </table>
 
 <a class="dynamic">Download</a> :  UPload <input type="file" name="inputFileToRead" id="inputFileToRead" /> <br />
+
+<script src="./graphics.js"></script>
 	
 <script>
 
@@ -79,51 +83,7 @@ Error
 			console.log("[" + s +"]\n") 
 	}
 	
-	function cvtgc(n)
-	{
-		n1=0
-		if ((n & 0x20)== 0x20) n1 |= 1
-		if ((n & 0x10)== 0x10) n1 |= 2
-		if ((n & 0x08)== 0x08) n1 |= 4
-		if ((n & 0x04)== 0x04) n1 |= 8
-		if ((n & 0x02)== 0x02) n1 |= 0x10
-		if ((n & 0x01)== 0x01) n1 |= 0x20		
-		return n1
-	}
-	
-	
-	function VDUtotext() 
-	{
-		const cset= "@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^-" +
-					" !\"#$%\&'()*+,-./0123456789:;<=>?" 
-					
-		var i,j,str=""
-		for (j=0; j<16;j++) {
-			for (i=0;i<32;i++) {
-				var ch = mem[0x8000+j*32+i]
-				if (ch==0x1b)
-					str = str + String.fromCharCode(0x7b)
-				else
-				if (ch==0x1d)
-					str = str + String.fromCharCode(0x7d)
-				else
-				if (ch>=0 && ch<=0x3f) 	
-					str = str + cset[ch]
-				else
-				if (ch>=0x80 && ch<=0xbf) 	
-					str = str + "<span class=\"black whitebg\">" + cset[ch-0x80]+"</span>"
-				else
-				if (ch>=0x40 && ch<=0x7f) 	
-					str = str + "<span class=\"white blackbg\">&#" + (cvtgc(ch-0x40)+0xe200)+";</span>"
-				else
-				if (ch>=0xc0 && ch<=0xff) 	
-					str = str + "<span class=\"yellow blackbg\">&#"+ (cvtgc(ch-0xc0)+0xe200)+";</span>"
 
-			}
-			str = str + "\n"
-		}
-		return str
-	}
 	
 	function print_prompt()
 	{
@@ -169,6 +129,12 @@ Error
 		//	return 0
 		//}
 		//else 
+		if (addr >= 0x8000 && addr< 0x9800)
+		{
+			// VRAM
+			return VGget_byte(addr)
+		}
+		else 
 		if (addr >= 0xb000 && addr< 0xb7ff) 
 		{
 			return get_byte_8255(addr)
@@ -183,6 +149,12 @@ Error
 	
 	function put_byte(addr, v) 
 	{
+		if (addr >= 0x8000 && addr< 0x9800)
+		{
+			// VRAM
+			VGput_byte(addr, v)
+		}
+		else 
 		if (addr >= 0xc000) {
 			// ROM
 			debug_out("ROM read only- "+hex4(addr))
@@ -782,7 +754,7 @@ Error
 	print_mon("RUN, STEP,N, CLEAR, A, V\n\n") 
 		
 	/* VDU screen test */
-	for (i=0; i<512; i++) mem[0x8000+i]=0;
+	for (i=0; i<512; i++) put_byte(0x8000+i,0);
 
 </script>
 
