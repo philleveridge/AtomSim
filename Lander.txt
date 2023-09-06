@@ -1,0 +1,25 @@
+5 S=#8000
+7 DIM P(-1);P.$21
+8[;JSR #FE71;STY #80;RTS;];P.$6
+10 CLEAR 0
+20 H=1000;V=0;F=500;A=3
+30 P. $30"     alt --- vel  -- fuel"
+35 DO
+40 PRINT$30'H,V,F,A
+45 H=H-V; V=V+A
+50 GOSUB a
+60 LINK TOP;R=?#80
+62 A=3
+65 IF R=56 THEN F=F-10;A= -3
+66 IF F<0 F=0
+67 IF H<0 H=0
+70 UNTIL H=0
+75 CLEAR 0
+80 IF V>10 P. $30"       crash!!"
+100 END
+200a Y=(1000-H)/64; X=16;
+210 M=(Y*32+X); O?S=32; O=O+32; O?S=32; M?S=1;
+215 O=M
+220 IF A<0 M=M+32; M?S=#2A
+230 RETURN
+

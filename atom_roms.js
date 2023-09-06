@@ -14,7 +14,13 @@ function loadcode(codestr,n=0) {
 			}
 		}
 	}
-	print_mon("Loaded " + hex4(n) + "-" + hex4(n+nb-1) +"\n")		
+	
+	mtop = n+nb
+	print_mon("Loaded " + hex4(n) + "-" + hex4(mtop-1) +"\n")		
+				// set top
+	mem[0xd] = (mtop) & 0xff 		//lsb
+	mem[0xe] = ((mtop) & 0xff00)>>8 //msb
+			
 }
 	
 const KERNAL_ROM=

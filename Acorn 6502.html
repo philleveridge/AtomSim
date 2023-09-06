@@ -59,7 +59,7 @@
 </table>
 
 <a class="dynamic">Download</a> :  UPload <input type="file" name="inputFileToRead" id="inputFileToRead" /> <br />
-
+<textarea id="code" rows=5 cols="30"></textarea>
 <script src="./graphics.js"></script>
 	
 <script>
@@ -577,6 +577,44 @@
 					break
 				m += s[1]				
 			}				
+		}
+		else if (r[0]=="TEXT") {
+			code = document.getElementById("code").value
+
+			addr = 0x2900
+			mem[addr]=0x0d
+			addr += 1
+			ln=code.split("\n")
+			for (var i=0;i<ln.length;i++)
+			{
+				var s=ln[i]
+				print_mon(i+" "+s+"\n")
+				var n=0
+				var ll=0
+				while (s[n]>="0" && s[n]<="9")
+				{
+					ll=ll*10+(s[n]-'0')
+					n +=1
+				}
+				mem[addr]  = (ll/256)&0xff
+				mem[addr+1]= (ll%256)&0xff
+				addr += 2
+				while (n<s.length)
+				{
+					mem[addr] = s[n].charCodeAt(0)
+					addr += 1
+					n+= 1
+				}
+				mem[addr]=0x0d
+				addr +=1
+			}
+			
+			mem[addr]=0xff
+						
+			// set top
+			mem[0xd] = (addr) & 0xff 		//lsb
+			mem[0xe] = ((addr) & 0xff00)>>8 //msb
+			
 		}
 		else if (r[0]=="T") {
 			var i
