@@ -77,7 +77,7 @@ function cvtkbd(ch)
 	}
 	
 	c=String.fromCharCode(ch)
-	debug_out("ch ("+c+")")
+	//debug_out("ch ("+c+")")
 	
 	if (shifted[0].includes(c)) {
 		c = shifted[1].charAt(shifted[0].indexOf(c))
@@ -196,11 +196,11 @@ function get_byte_8255(addr)
 		PORTC |= (((CLK % 480) > 240) ? 0x80 : 0) // 60Hz
 		PORTC |= (((CLK % 120) > 60)  ? 0x10 : 0) // 2400Hz
 
-		debug_out("PORTC= ("+hex2(PORTC)+") "
-			+ (((PORTC&0x80)==0x80)?"1 ":"0 ")  
-			+ (((PORTC&0x40)==0x40)?"1 ":"0 ")  
-			+ (((PORTC&0x20)==0x20)?"1 ":"0 ")  
-			+ (((PORTC&0x10)==0x10)?"1 ":"0 ") )		
+//		debug_out("PORTC= ("+hex2(PORTC)+") "
+//			+ (((PORTC&0x80)==0x80)?"1 ":"0 ")  
+//			+ (((PORTC&0x40)==0x40)?"1 ":"0 ")  
+//			+ (((PORTC&0x20)==0x20)?"1 ":"0 ")  
+//			+ (((PORTC&0x10)==0x10)?"1 ":"0 ") )		
 		return  PORTC
 	}
 }
@@ -290,7 +290,7 @@ function put_byte_8255(addr, v)
 		// 2 loudspk				0x04
 		// 3 n/a
 		
-		debug_out("PORTC="+hex2(v))
+		//debug_out("PORTC="+hex2(v))
 		
 		var TapeOn = ((v&0x02)==0x02)
 		var CasOn =  ((v&0x01)==0x01)
@@ -328,24 +328,94 @@ function put_byte_8255(addr, v)
 }
 
 /* ATOM VIA */
+DRB=0;DRA=0;DDRA=0;DDRB;PCR=0;IFR=0;IE=0
+T1CL=0;T1CH=0;T1LL=0;T1LH=0;T2CL=0;T2CH=0
+Timer2=0
+
 function put_byte_6522(addr,v)
 {
-	if (addr >= 0xb800 && addr< 0xc000) 
+	if (addr >= 0xb800 && addr< 0xb810) 
 	{
-		// writing to VIA I/O device
-		debug_out("6522 VIA I/0 write address - "+hex4(addr))
+		// writing to VIA I/O device (printer)
+		if (addr == 0xB801) {        
+			//print("VIA DA=",v)
+			debug_out (v)
+			if (v==13); print()
+			PCR=0x80
+		}
+		else if (addr == 0xB803) {       
+			//print("VIA DDRA =",v)
+			DDRA=v
+		}
+		else if (addr == 0xB808) {       
+			T2CL=v
+			IFR = IFR | 0b00100000
+			Timer2=((T2CL<<8)&0xFF00)+((T2CL)&0xFF)
+			debug_out ("timer2 =",Timer2)
+		}
+		else if (addr == 0xB809) {       
+			T2CH=v
+			Timer2=((T2CL<<8)&0xFF00)+((T2CL)&0xFF)
+			debug_out ("timer2 =",Timer2)
+		}
+		else if (addr == 0xB80C) {       
+			debug_out ("VIA PCR =",v)
+			PCR=v
+		}
+		else if (addr == 0xB80D) {       
+			debug_out ("VIA IFR =",v)
+			IFR=v
+		}
+		else
+			print("VIA ",addr,"=",v)  
+		
 	} 
 }
 	
 function get_byte_6522()	
 {
-	if (addr >= 0xb800 && addr< 0xc000) 
+	if (addr >= 0xb800 && addr< 0xb810) 
 	{
-		// VIA I/O device
+		// VIA I/O device (printer?)
 		debug_out("6522 VIA I/0 read address - "+hex4(addr))
+		
+		if (addr == 0xB801) {        
+			debug_out("DA="+DA)
+			return DA
+		}
+		if (addr == 0xB803) {        
+			debug_out("DDRA="+DDRA)
+			return DDRA
+		}		
+		if (addr == 0xB808) {       
+			debug_out ("ltimer2 =",Timer2)
+			T2CL -= 1
+			if (T2CL<0) {
+				T2CL=255
+				T2CH=T2CH-1
+			}
+			return T2CL
+			
+		}
+		if (addr == 0xB809) {       
+			debug_out ("htimer2 =",Timer2)
+			T2CH -= 1
+			if (T2CH<0)
+				TCLH=255			
+			return T2CH
+
+		}		
+		if (addr == 0xB80C) {       
+			debug_out("PCR="+PCR)
+			return PCR
+		}	
+		if (addr == 0xB80D) {       
+			debug_out ("IFR =",IFR)
+		}		
+		return 0
 
 	}
-	return 0 /* not connected */
+	return 0xFF /* not connected */
 } 
 
 //if you have another AudioContext class use that one, as some browsers have a limit

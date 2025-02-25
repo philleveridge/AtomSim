@@ -12,10 +12,10 @@
 */
 
 const MAX_VMEM = 6 * 1024
-const VGmem  = new Array(MAX_VMEM) // MAX MEM needed 6K !
+const VGmem  = new Array(MAX_VMEM) // MAX VMEM needed 6K !
 const canvas = document.querySelector(".myCanvas");
-const width  = (canvas.width) //  = window.innerWidth);
-const height = (canvas.height) // = window.innerHeight);
+const width  = (canvas.width) 
+const height = (canvas.height) 
 
 const ctx = canvas.getContext("2d");
 
@@ -71,7 +71,7 @@ function VDUgraphic()
 		my = Modes[VGmode][1]
 		sz = Modes[VGmode][2]
 
-		pw = (width / mx)
+		pw = (width  / mx)
 		ph = (height / my)
 		
 		ctx.fillStyle = "rgb(255,255,255)"
@@ -81,7 +81,7 @@ function VDUgraphic()
 			B = VGget_byte(i)
 			Mask=0x80
 			x = (i * 8) % mx
-			y = Math.round((i * 8) / mx) % my
+			y = Math.floor((i * 8) / mx) % my
 			for (j=0; j<8; j++) // foreach bit
 			{
 				if ((B & Mask)==Mask)
@@ -140,21 +140,23 @@ function VDUtotext()
 
 function set_graphics_mode(GM)
 {
+	/* node color modes are 1,5,9,13 (1a,2a,3a,4a) */
 	x=0
 	if (GM==15)
 		x=4
-	else if (GM==13)
+	else if (GM==11) /* to do */
 		x=3
-	else if (GM==7)
+	else if (GM==7)  /* to do */
 		x=2
-	else if (GM==3)
+	else if (GM==3)  /* to do */
 		x=1
 			
 	if (VGmode==x) return
 	VGmode=x
 	
 	print_mon("Mode = " + VGmode + "\n")	
-	if (VGmode==0) {
+	if (VGmode==0) 
+	{
 		document.getElementById("VDU").style.display="block"
 		canvas.style.display = "none"
 		document.getElementById("VDU").innerHTML= VDUtotext()
@@ -163,8 +165,6 @@ function set_graphics_mode(GM)
 	{
 		document.getElementById("VDU").style.display="none"
 		canvas.style.display= "block"
-		
-		//const ctx = canvas.getContext("2d");
 		ctx.fillStyle = "rgb(0, 0, 0)"
 		ctx.fillRect(0, 0, width, height);
 	}	
@@ -181,17 +181,3 @@ function clear_screen () {
 	ctx.fillStyle = "rgb(0, 0, 0)"
 	ctx.fillRect(0, 0, width, height);
 }
-
-/*
-		if (r[0]=="MODE") {
-			if (r.length<2)
-			{
-				print_mon("mode ="+VGmode+ "(" + Modes[VGmode][0] + "," + Modes[VGmode][1] +")\n")
-			}
-			else
-				set_graphics_mode(r[1])				
-		}
-		else if (r[0]=="CLR") {		
-			clear_screen()
-		}
-*/

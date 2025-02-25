@@ -28,6 +28,8 @@ const CFLG = 0x01
 CLK=0
 
 XDBG=false
+
+var nmi_int=0
 	
 function get_sr() {
 	S = (	((fC==true) ? CFLG : 0) | 
@@ -51,8 +53,16 @@ function reset() {
 	PC = get_word(0xFFFC)
 }	
 
-function push_byte(v) {
+function nmi_interupt() {
+	push_byte(PC >> 8)
+	push_byte(PC & 0xFF)
+	push_byte(get_sr())	
+	fI=false 
+	PC = get_word(0xFFFA)
+	//XDBG=1
+}
 
+function push_byte(v) {
 	saddr = 0x0100 + SP
 	SP = (SP - 1) & 0xff
 	//debug_out("push("+v+")->"+ saddr)
@@ -62,7 +72,7 @@ function push_byte(v) {
 function pop_byte() {
 	SP = (SP + 1) & 0xff
 	saddr = 0x0100 + SP
-	//debug_out("pop " +  saddr)
+
 	return get_byte(saddr)
 }
 	
@@ -173,7 +183,12 @@ function branch(ofs, bool) {
 
 /* LOAD instruction from PC */
 function execute() 
-{		
+{
+	if (nmi_int==1) {
+		nmi_int=0
+		nmi_interupt()
+	}
+	
 	ins = mem[PC]	
 	
 	CLK++	
@@ -196,13 +211,17 @@ function execute()
 		else 
 			str = hex4(PC) + " " + hex2(get_byte(PC))+ ": " + s[0] +str
 		
-
-		if (IPnt == PC) {
-			str = str + "   " + hex4(IVadd) + ": " + hex2(mem[IVadd]) + " " + hex2(mem[IVadd+1]) 
-			print_mon( str +"\n")
-		}
-		debug_out(str)
+		stk="{1F0:"+hex2(mem[0x1F0])+" "+hex2(mem[0x1F1])+" "+hex2(mem[0x1F2])+" "+hex2(mem[0x1F3])+" "
+		stk +=      hex2(mem[0x1F4])+" "+hex2(mem[0x1F5])+" "+hex2(mem[0x1F6])+" "+hex2(mem[0x1F7])+"  "
+		stk +=      hex2(mem[0x1F8])+" "+hex2(mem[0x1F9])+" "+hex2(mem[0x1Fa])+" "+hex2(mem[0x1Fb])+" "
+		stk +=      hex2(mem[0x1Fc])+" "+hex2(mem[0x1Fd])+" "+hex2(mem[0x1Fe])+" "+hex2(mem[0x1Ff])+"}"
 			
+		if (IPnt == PC) {			
+			str = str + "   " + hex4(IVadd) + ": " + hex2(mem[IVadd]) + " " + hex2(mem[IVadd+1]) 
+			print_mon( str +"\n"+ stk + "\n")
+		}
+		//debug_out(str + "\n" + stk)
+		debug_out(str )			
 	}
 	
 	PC += 1		
@@ -250,8 +269,7 @@ function execute()
 		M = get_byte(get_word(addr)+Yreg)						
 		Adc(M) //Acc =  update_flgs_adc(Acc, M)
 		PC += 1		
-		break
-		
+		break		
 	case 0x29: /* AND # */
 		M = get_byte(PC)						
 		Acc =  Acc & M
@@ -401,10 +419,8 @@ function execute()
 		push_byte(PC+1 & 0xFF)
 		push_byte(get_sr())	
 		fI=true 
-		PC = get_word(0xFFFE)
-			
-		break //return "? BRK\n" 
-		
+		PC = get_word(0xFFFE)			
+		break //return "? BRK\n" 		
 	case 0x50: /* BVC */
 		ofs = get_byte(PC)
 		PC += 1

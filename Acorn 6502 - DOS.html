@@ -1,0 +1,971 @@
+<html><!-- 
+    Teletext Character Set
+    Galax 2015 http://galax.xyz
+    
+    MODE7GX3.TTF font by Galax 2014 - based on ModeSeven, created in 1998 by Andrew Bulhak
+-->
+<head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<title>ACORN 6502 wt DOS EMULATOR</title>
+<link rel="stylesheet" href="TELETEXT.CSS">
+<style>
+.sep {
+    line-height: 120%;
+}
+</style>
+</head>
+
+<body>
+<script src="./atomperif.js"></script>
+<script src="./mpu6502.js"></script>
+<script src="./assemble.js"></script>
+
+<table id="screen" style="border:4px solid green">
+<tbody>
+<tr tabindex=0 id=kscreen>
+<td class="teletext">
+	<div id=VDU class="teletext">TEXT SCREEN</div>
+	<canvas width="500" height="300" class="myCanvas" style="display: none">Atom Graphics screen</canvas>
+</td>
+</tr>
+</tbody>
+</table>
+
+
+<hr>
+<script src="./diskio.js"></script>
+<script src="./fdc8271.js"></script>
+<img id="don" src="./case.jpg" height=30 width=70 onclick="clickdisk(1);" />  
+<img id="doff" src="./case-o.jpg" height=30 width=70 onclick="clickdisk(0);" />
+
+<b id="demo"></b>
+
+<input id="inputFileToRead" type="file" name="inputFileToRead" />
+
+<hr>
+
+<button onclick="vison()";>Debug</button>
+<table id="tools" border="0">
+ <tr>
+	 <td><b id="tab">The Monitor</b></td>
+ </tr>
+
+
+ <tr>
+	 <td><textarea id="monitor" rows=12 cols="40"></textarea> </td>
+	 <td>
+	 <textarea id="status" rows="2" cols="50">STATUS</textarea>
+	 <textarea id="dump1" rows="10" cols="50">0000 00</textarea>
+	 </td>
+ </tr>
+
+ <tr>
+	 <td>
+	 </td>
+	 <td></td>
+ </tr>
+
+</table>
+
+<script src="./graphics.js"></script>
+
+<script>	
+	const INTZERO =	0	
+	const MEMSIZE =1024 * 64 	
+	const mem = new Array(MEMSIZE)
+	
+	var kbd 	= ""
+	var prompt 	= "* "
+	var halt	= false;
+	
+	var ATOMkbd 	= "Q"
+	
+	var AtomFile = []
+			
+	var dbg=1
+	function debug_out(s) {
+		if (dbg==1) 
+			console.log("[" + s +"]\n") 
+	}
+	
+	function vison() {
+		if (dbg==1) {
+			document.getElementById("tools").style.display = "none"; // to hide  
+			print_mon("Debug tools OFF\n")
+			dbg=0
+		}
+		else
+		{
+			document.getElementById("tools").style.display = "block"; // to show
+			dbg=1
+			print_prompt()
+			print_mon("Debug tools ON\n")
+
+		}
+	}
+	
+	vison();clickdisk()
+
+	function clickdisk(x) {
+		let f=false
+
+		
+		if (x==0) {
+			saveDiskete()
+		}		
+		
+		if (fdc8271.drive!=0 && fdc8271.drive.discready==true)
+			f=true			
+		
+		if (f) {	
+			document.getElementById("demo").innerHTML = "DISK IN"
+			document.getElementById("don").width=0
+			document.getElementById("don").height=0
+			document.getElementById("doff").width=70
+			document.getElementById("doff").height=30
+						
+			document.getElementById("inputFileToRead").style.display = "none";
+		}
+		else {			
+			document.getElementById("demo").innerHTML = "NO DISK"
+			document.getElementById("don").width=70
+			document.getElementById("don").height=30
+			document.getElementById("doff").width=0
+			document.getElementById("doff").height=0
+			
+			document.getElementById("inputFileToRead").style.display = "inline-block";
+		}
+		
+	}
+
+	function saveDiskete() {
+		const textToWrite = fdc8271.drive.saveDisk();
+		const blob = new Blob([textToWrite], { type: 'text/plain' });
+		const a = document.createElement('a');
+		a.href = URL.createObjectURL(blob);
+		a.download = 'Floppy.DST';
+		a.click();
+		URL.revokeObjectURL(a.href);
+		
+		// assume saveDisk?
+		fdc8271.drive.eject()
+	}
+	
+	function loadrom(f) {
+		const rom = new Uint8Array(f)
+		if (rom.length != 1024*4)
+			return -1
+		for (let n=0; n<1024*4; n++) {
+			put_byte(0xA000+n,rom[n])
+		}
+		reset();
+		return 0;
+	}
+
+	function upload(f) {
+		// put atomfile directly in to memory at TOP-2
+		//tp=fr.result.split(" ")		
+		tp=f.split(" ")
+
+		AtomFile.length=0
+		AtomFile.push(0x2a);AtomFile.push(0x2a);AtomFile.push(0x2a);AtomFile.push(0x2a);
+		for (var i=0; i<tp.length; i++)
+		{
+			AtomFile.push(str2num("$"+tp[i]))
+		}
+					
+		print_mon("File ("+AtomFile.length+")\n")
+		
+		var TOP = mem[0xd] + (	mem[0xe] <<8 ) //msb			
+		var addr=TOP-2
+		var ld=false
+		for (var i=4; i<AtomFile.length; i++)
+		{
+			var b=AtomFile[i]
+			if (!ld) {
+				print_mon(i+" "+String.fromCharCode(b) +"\n")
+				if (b==0x0d) {ld=true;i+= 8; }
+			}
+			else {
+				print_mon(hex4(addr)+" "+b+"\n")
+				mem[addr]=b
+				addr += 1
+			}				
+		}	
+		// set top
+		mem[0xd] = (addr) & 0xff 		//lsb
+		mem[0xe] = ((addr) & 0xff00)>>8 //msb
+	}
+
+	function textload(code) {
+		addr = 0x2900
+		mem[addr]=0x0d
+		addr += 1
+		ln=code.split(/\r\n|\r|\n/)
+		for (var i=0;i<ln.length;i++)
+		{
+			var s=ln[i].trim()
+			if (s.length==0 || s[0]=="#")
+				continue
+			print_mon(i+" "+s+"\n")
+			var n=0
+			var ll=0
+			while (s[n]>="0" && s[n]<="9")
+			{
+				ll=ll*10+(s[n]-'0')
+				n +=1
+			}
+			mem[addr]  = (ll/256)&0xff
+			mem[addr+1]= (ll%256)&0xff
+			addr += 2
+			while (n<s.length)
+			{
+				mem[addr] = s[n].charCodeAt(0)
+				addr += 1
+				n+= 1
+			}
+			mem[addr]=0x0d
+			addr +=1
+		}
+		
+		mem[addr]=0xff
+		addr +=1						
+		// set top
+		mem[0xd] = (addr) & 0xff 		//lsb
+		mem[0xe] = ((addr) & 0xff00)>>8 //msb
+	}
+	
+	function print_prompt()
+	{
+		if (dbg==1) {
+			document.getElementById("status").innerHTML  = dump_status();
+			document.getElementById("dump1").innerHTML  = dump_memory(PC,1024);		
+			print_mon(prompt)	
+		}		
+		document.getElementById("VDU").innerHTML= VDUtotext()
+	}
+	
+	function print_mon(s) {
+		if (dbg==1) {
+			document.getElementById('monitor').value += s; 
+			setTimeout(function()
+			{
+				var textArea = document.getElementById('monitor');
+				textArea.scrollTop = textArea.scrollHeight;
+			}, 10);
+		}
+	}
+	
+	function setSelectionRange(input, selectionStart, selectionEnd) {
+	  if (input.setSelectionRange) {
+		input.focus();
+		input.setSelectionRange(selectionStart, selectionEnd);
+	  }
+	  else if (input.createTextRange) {
+		var range = input.createTextRange();
+		range.collapse(true);
+		range.moveEnd('character', selectionEnd);
+		range.moveStart('character', selectionStart);
+		range.select();
+	  }
+	}
+
+	function setCaretToPos (input, pos) {
+	   setSelectionRange(input, pos, pos);
+	}
+	
+	function get_byte(addr) 
+	{
+		//if (addr >= 0x2900 && addr< 0x8000)
+		//{
+			// expansion RAM
+		//	debug_out("Atom RAM expanison - "+hex4(addr))
+		//	return 0
+		//}
+		//else 
+		if (addr >= 0x8000 && addr< 0x9800)
+		{
+			// VRAM
+			return VGget_byte(addr)
+		}
+		else 
+		if (addr >= 0xb000 && addr<= 0xb3ff) 
+		{
+			return get_byte_8255(addr)
+		} 		
+		else if (addr >= 0xb800 && addr< 0xc000) 
+		{
+			return get_byte_6522(addr)
+		} 
+		else if (addr >= 0x0a00 && addr< 0x0a80) 
+		{
+			return get_byte_8271(addr)
+		} 
+		else
+			return mem[addr&0xFFFF]&0xff
+	}
+	
+	function put_byte(addr, v) 
+	{
+		if (addr >= 0x8000 && addr< 0x9800)
+		{
+			// VRAM
+			VGput_byte(addr, v)
+			mem[addr&0xFFFF] = v
+		}
+		else 
+		if (addr >= 0xc000) {
+			// ROM
+			debug_out("ROM read only- "+hex4(addr))
+		}
+		else if (addr >= 0xb000 && addr<= 0xb3ff) 
+		{
+			// writing to PPIA I/O device
+			put_byte_8255(addr,v)	
+		}
+		else if (addr >= 0xb800 && addr< 0xc000) 
+		{
+			// writing to VIA I/O device
+			put_byte_6522(addr,v)
+		} 	
+		else if (addr >= 0x0a00 && addr< 0x0a80) 
+		{
+			put_byte_8271(addr, v)
+		} 
+		else if (addr >= 0xb400 && addr< 0x0b7ff) 
+		{
+			mem[addr&0xFFFF] = 0
+		} 
+		else
+			mem[addr&0xFFFF] = v
+	}
+
+	function get_word(addr) 
+	{
+		if (addr >= 0xb000 && addr< 0xb7ff) 
+		{
+			// PPIA I/O device
+			debug_out("8255 I/0 read word? - "+hex4(addr))
+		} 		
+		if (addr >= 0xb800 && addr< 0xc000) 
+		{
+			// VIA I/O device
+			debug_out("6522 VIA I/0 read word? - "+hex4(addr))
+		} 
+		if (addr>=0 && addr<MEMSIZE-1) {
+			LB= get_byte(addr)
+			HB= get_byte(addr+1)
+			return (HB<<8) | LB	
+		}
+		return INTZERO
+	}
+	
+	function clr_memory(){		
+		var i,j; 
+		for (i=0; i<MEMSIZE; i++) { 
+			mem[i] = INTZERO; 
+		}
+		PC=0
+		Acc=0
+		Xreg=0
+		Yreg=0
+	} 
+	
+	/* NV-BDIZC */
+	function PSR2text() {
+		str="PS="
+		if  (fN) str += "N"; else str += "." ;
+		if  (fV) str += "V"; else str += "." ;
+		str +=  " "
+		if  (fB) str += "B"; else str += "." ;
+		if  (fD) str += "D"; else str += "." ;
+		if  (fI) str += "I"; else str += "." ;
+		if  (fZ) str += "Z"; else str += "." ;
+		if  (fC) str += "C"; else str += "." ;
+		return str
+	}
+	
+	function dump_status() {
+		var str=""; var i; 
+		
+		str  = "A="  + hex2(Acc) + " "
+		str += "X="  + hex2(Xreg) + " "
+		str += "Y="  + hex2(Yreg) + " "
+		str += "SP=" + hex2(SP) + " "
+		str += "PC=" + hex4(PC) + "\n"
+		str += PSR2text() + "\n"
+		return str
+	}
+	
+	function dump_memory(a1, n) {
+		var str=""; var i; 
+		
+		if (a1 < MEMSIZE-0x50 && a1+n >= MEMSIZE) {
+			n=0x50
+		}
+		if (a1 >= MEMSIZE-0x50) {
+			a1=MEMSIZE-0x50
+			n=0x50
+		}		
+		
+		for (i=a1; i< a1+n; i++) {
+			str += hex4(i) + " " 
+			for (j=0; j<8; j++) {
+				str +=  hex2(mem[i+j]) + " " 
+			}
+			str += "\n"
+			i=i+7
+		}
+		return str
+	}
+
+	
+	function sleep(ms) {
+			document.getElementById("status").innerHTML  = dump_status();
+			document.getElementById("VDU").innerHTML= VDUtotext()
+			return new Promise(resolve => setTimeout(resolve, ms));
+	}		
+	var ss=0
+	
+	async function do_execute() {
+		var m="OK"		
+	
+		var	cnt=0
+		while (m.substr(0,1) != "?") {	
+
+			if (mem[PC]==0x60 && ss==2)
+				ss=1
+				
+			m=execute()  //  
+			
+			cnt += 1
+
+			if (m=="STOP" || ss==1)
+				return ""
+	
+			if (halt) {
+				halt=false;
+				print_mon( "ESC\n")
+				m=""
+				return 
+			}
+			
+			// handle FDC 
+			if (fdc8271.event_timer != 0)
+			{
+				fdc8271.event_timer -= 2
+				if (fdc8271.event_timer<=0) {
+					fdc8271.callback()
+				}
+			}
+			if ((cnt%3)==0)
+			{
+				fdc8271.poll_hw();
+			}
+			//handle web page interactions
+			if (cnt>200) {
+				await sleep(0.01)
+				cnt=0
+			}
+			
+			if (m!= "") print_mon( m +"\n") 
+		}
+		return
+	}
+	
+
+	LOC=-1
+	
+	function getName(A) {
+		var i
+		s=""
+		mc=0
+		for (i=4; i<A.length;i++) {
+			if (A[i]==0xd)
+				break;
+			s += String.fromCharCode(A[i])
+			mc += 1
+			if (mc==8)
+				break;
+		}
+		return s
+	}
+
+	function do_action(s) {
+		var r = s.split(" ")
+		var n = 16
+		var message=""	
+		
+		if (LOC>=0 && r.length==1 && r[0].length==0)
+		{
+			LOC=-1
+			print_mon(".EXIT\n")
+			print_prompt()
+			return
+		}
+		
+		if (LOC>=0 && r.length>0 && !isNumeric(r[0]))
+		{
+			q = assemble(LOC, s)
+			if (q < 0) {
+				LOC=-1
+				print_mon("ASSMB ERROR\n")
+				print_prompt()
+				return			
+			} else {
+				LOC=q
+				message = hex4(LOC) + ": " 
+			}
+		}
+		else
+		if (r.length==1 && isNumeric(r[0])) {
+			if (LOC>=0) {
+				put_byte(LOC,str2num(r[0]))
+				LOC+=1
+				message = hex4(LOC)+ ": "
+			}
+			else {
+				n= str2num(r[0])
+				message = hex2(n) +" = "+hex2(get_byte(n)) +"\n"
+			}
+		}
+		else
+		if (r.length==3 && r[0]=="M" && isNumeric("$"+r[2]) && isNumeric("$"+r[1])) {
+			n= str2num("$"+r[1])
+			m= str2num("$"+r[2])
+			message = hex4(n) + " = " + hex2(m) +"\n"
+			put_byte(n,m)
+		}
+		else
+		if (r[0]=="STEP") {
+			ss=1
+			reset()
+			s=disassemble(PC)
+			if (s[0]=="")
+				print_mon(hex4(PC) + " " + hex2(get_byte(PC))+ ": Error ?\n")
+			else 
+				print_mon(hex4(PC) + " " + hex2(get_byte(PC))+ ": " + s[0] +" ?\n")
+		}
+		else
+		if (r[0]=="BASIC") {
+				print_mon("ERROR NUMBER: " + hex2(get_byte(0))+"\n")
+				print_mon("LINE NUMBER: " + get_word(1)+"\n")
+				print_mon("CHAR: " + get_byte(3)+"\n")
+				print_mon("LINE: @" + hex4(get_word(5))+"\n")				
+		}
+		else
+		if (r[0]=="NEXT" || r[0]=="N") {
+			ss=1
+			print_mon(execute())
+			s=disassemble(PC)
+			if (s[0]=="")
+				print_mon(hex4(PC) + " " + hex2(get_byte(PC))+ ": Error ?\n")
+			else 
+				print_mon(hex4(PC) + " " + hex2(get_byte(PC))+ ": " + s[0] +" ?\n")
+		}
+		else
+		if (r[0]=="RUN" || r[0]=="CONT" || r[0]=="J") {
+			
+			if (r[0]=="RUN") {
+				kbd=""
+				ATOMkbd=""
+				reset()
+			}
+			
+			if (r[0] != "J") ss=0; else ss=2;
+			
+			d1=new Date();
+			st=d1.getTime()			
+			do_execute().then(res => {
+				d1=new Date();
+				if (ss==2) {
+					s=disassemble(PC)
+					if (s[0]=="")
+						print_mon(hex4(PC) + " " + hex2(get_byte(PC))+ ": Error ?\n")
+					else 
+						print_mon(hex4(PC) + " " + hex2(get_byte(PC))+ ": " + s[0] +" ?\n")
+				}
+				else {
+					print_mon("time:="+(d1.getTime()-st)+"ms\n");
+					print_prompt()
+				}
+			})
+			return
+		}
+		else
+		if (r[0]=="A" && r.length==2 && isNumeric(r[1])) {
+			LOC = str2num("$"+r[1])
+			put_byte(0xfffc,LOC & 0xff)
+			put_byte(0xfffd,(LOC & 0xff00)>>8)	
+			PC=0
+			print_mon(hex4(LOC)+ ": ")
+			print_prompt()			
+			return
+		}		
+		else
+		if (r[0]=="D" && r.length==2 && isNumeric("$"+r[1])) {
+			print_mon(dump_memory(str2num("$"+r[1]),0x50))
+			print_prompt()			
+			return
+		}	
+		else
+		if (r[0]=="B" && r.length==2 && isNumeric("$"+r[1])) {
+			BPnt = str2num("$"+r[1])
+			print_mon("Breakpoint set " +hex4(BPnt)+"\n")
+			print_prompt()			
+			return
+		}
+		else
+		if (r[0]=="I" && r.length>=2 && isNumeric("$"+r[1])) {
+			IPnt = str2num("$"+r[1])
+			if (r.length==3) {
+				IVadd = str2num("$"+r[2])
+			}
+			print_mon("Inspection set " +hex4(IPnt)+"\n")
+			print_prompt()			
+			return
+		}
+		else
+		if (r[0]=="BC") {
+			BPnt = -1
+			IPnt = -1
+			print_mon("Breakpoint cleared\n")
+			print_prompt()			
+			return
+		}
+		else
+		if (r[0]=="X") {
+			XDBG = (1-XDBG)
+			print_mon("extended debuging " + XDBG +"\n")
+			print_prompt()			
+			return
+		}
+		else if (r[0]=="CLEAR") 	{
+			clr_memory()
+		}
+		/********************
+		********************/
+		else if (r[0]=="FLOPPY") {
+			print_mon(fdc8271.disk.dumpDisk())
+		}
+		else if (r[0]=="RESET") 	{
+			reset()
+		}
+		else if (r[0]=="V") 	{	
+			if (r.length>1 && isNumeric(r[1]))
+				m=str2num(r[1])
+			else
+				m=PC
+			var lc=0
+			while (lc<20) {
+				lc++
+				s=disassemble(m)
+				if (s[0]=="")
+					print_mon(hex4(m) + " " + hex2(get_byte(m))+ ": Error ?\n")
+				else 
+					print_mon(hex4(m) + " " + hex2(get_byte(m))+ ": " + s[0] +"\n")
+					
+				if (s[0]=="" || s[0]=="BRK" )
+					break
+				m += s[1]				
+			}				
+		}
+		else if (r[0]=="TEXT") {
+			code = document.getElementById("code").value
+
+			addr = 0x2900
+			mem[addr]=0x0d
+			addr += 1
+			ln=code.split("\n")
+			for (var i=0;i<ln.length;i++)
+			{
+				var s=ln[i]
+				print_mon(i+" "+s+"\n")
+				var n=0
+				var ll=0
+				while (s[n]>="0" && s[n]<="9")
+				{
+					ll=ll*10+(s[n]-'0')
+					n +=1
+				}
+				mem[addr]  = (ll/256)&0xff
+				mem[addr+1]= (ll%256)&0xff
+				addr += 2
+				while (n<s.length)
+				{
+					mem[addr] = s[n].charCodeAt(0)
+					addr += 1
+					n+= 1
+				}
+				mem[addr]=0x0d
+				addr +=1
+			}
+			
+			mem[addr]=0xff
+			addr +=1						
+			// set top
+			mem[0xd] = (addr) & 0xff 		//lsb
+			mem[0xe] = ((addr) & 0xff00)>>8 //msb
+			
+		}
+		else if (r[0]=="T") {
+			var i
+			for (var key in labels)
+				print_mon(key +"... "+ labels[key]+"\n")
+		}
+		else if (r[0]=="") {
+		}
+		else
+			message = "ERR : [" + r[0]+ "] ?\n"
+		//refresh display	
+		print_mon(message)
+		print_prompt()
+		return
+	}
+	
+	
+	function atomInput(event){
+		var srcField = event.srcElement;
+
+		event.preventDefault()
+		message = ""
+	
+	    if (typeof(srcField) !== "undefined" && srcField !== null) {
+		
+			var inputLetter  = event.keyCode
+	
+			if (inputLetter == 13)
+			{	
+				ATOMkbd = 13
+			}
+			else {	
+				ATOMkbd = inputLetter								
+			}
+		}	
+	}
+		
+	function atomBackspace(event){
+		var srcField = event.srcElement;
+
+	    if (typeof(srcField) !== "undefined" && srcField !== null) {
+		
+			var inputLetter  = event.keyCode
+		
+			if (event.keyCode == 17)
+			{
+				debug_out("CTRL")
+				ATOMkbd=400
+			}
+			else if (event.keyCode == 16)
+			{
+				debug_out("SHIFT")
+			}
+			else if (event.keyCode == 19)
+			{
+				// cause
+				debug_out("BRK/RESET")
+				reset()
+			}
+			else if (event.keyCode >= 37 &&  event.keyCode <= 40)
+			{
+				debug_out("CURSOR")
+				event.preventDefault()
+				ATOMkbd=(event.keyCode+500)
+			}			
+			else
+			if (inputLetter==27) {		
+				ATOMkbd=27
+			}		
+			else
+			if (inputLetter==8) {
+				ATOMkbd = 8
+			}
+		}	
+	}		
+	var kbd;
+	
+	function checkInput(event){
+		var srcField = event.srcElement;
+
+		event.preventDefault()
+		message = ""
+	
+	    if (typeof(srcField) !== "undefined" && srcField !== null) {
+			var inputLetter  = event.keyCode
+	
+			if (inputLetter == 13)
+			{	
+				print_mon("\n")	
+				do_action(kbd)
+				kbd=""
+			}
+			else {				
+				if (inputLetter >=97) 
+					inputLetter = inputLetter-32;
+					
+				message = String.fromCharCode(inputLetter)
+				
+				kbd = kbd + message				
+			}
+			print_mon(message)
+		}	
+	}
+		
+	function checkBackspace(event){
+		var srcField = event.srcElement;
+
+	    if (typeof(srcField) !== "undefined" && srcField !== null) {
+		
+			
+			var inputLetter  = event.keyCode
+			
+			if (inputLetter==27) {		
+				halt = true; debug_out("halt called")
+			}		
+
+			if (inputLetter==8) {
+				if (kbd !="") {
+					kbd=kbd.slice(0,-1)
+				}
+				else
+					event.preventDefault()
+			}
+		}	
+	}	
+	
+	function loadcode(codestr,n=0) 
+	{
+		var i,j,ln,m,st
+		st=codestr.split(/\r\n|\r|\n/)
+		var nb=0
+		for (j=0; j<st.length; j++) {
+			ln = st[j].split(" ")
+			m=str2num("$"+ln[0])+n
+			for (i=1; i<ln.length; i++)
+			{
+				if (ln[i] != "") {
+					mem[(m+i-1)] =  str2num("$"+ln[i])	
+					nb += 1
+				}
+			}
+		}
+		print_mon("Loaded " + hex4(n) + "-" + hex4(nb) +"\n")		
+	}
+
+	/*****************************
+	
+		Start of PROGRAM
+		
+	******************************/
+
+	clr_memory();
+	
+	document.getElementById("monitor").addEventListener("keypress", checkInput)	
+	document.getElementById("monitor").addEventListener("keydown",  checkBackspace);	
+	document.getElementById("kscreen").addEventListener("keypress", atomInput)	
+	document.getElementById("kscreen").addEventListener("keydown",  atomBackspace);
+	
+	document.getElementById("inputFileToRead").addEventListener("change", function (e) {
+		var fr = new FileReader();	
+		var fn=this.files[0].name
+		
+		if (fn.substr(-4).toUpperCase()==".DSK") {
+		  fr.onload = function(e) {
+				var contents = e.target.result;
+
+				if (fdc8271.drive.bloadDisk(contents)==0)	{
+					print_mon("DISK INSERTED\n")
+					clickdisk(1)
+				}
+				else {
+					print_mon("DISK FAILED!\n")	
+					clickdisk(0)
+				}	
+			};
+		  fr.readAsArrayBuffer(this.files[0]);
+		  return;
+		};
+		
+		if (fn.substr(-4).toUpperCase()==".ROM") {
+		  fr.onload = function(e) {
+				var contents = e.target.result;
+
+				if (loadrom(contents)==0)	{
+					print_mon("ROM LOADED\n")
+				}
+				else {
+					print_mon("ROM FAILED!\n")	
+				}	
+			};
+		  fr.readAsArrayBuffer(this.files[0]);
+		  return;
+		};
+		
+		fr.readAsText(this.files[0]);
+		fr.onload = function () {			  				
+			floppybuffer=fr.result				
+			if (fn.substr(-4).toUpperCase()==".TAP") {
+				print_mon("Loading into memory")
+				upload(floppybuffer)
+				print_mon("BYTE INSERTED\n")
+			}
+			else if (fn.substr(-4).toUpperCase()==".BAS") {
+				textload(floppybuffer)
+				print_mon("CODE INSERTED\n")
+			}
+			
+			else if (fn.substr(-4).toUpperCase()==".ASM"){
+				let n=0
+				print_mon("loading @" + hex4(n)+ "\n")
+				ln = loadassemble(floppybuffer,n)
+				put_byte(0xfffc,ln & 0xff)
+				put_byte(0xfffd,(ln & 0xff00)>>8)
+			}
+			else if (fn.substr(-4).toUpperCase()==".DST")
+			{
+				if (fdc8271.drive.loadDisk()==0)	{
+					print_mon("DISK INSERTED\n")
+					clickdisk(1)
+				}
+				else {
+					print_mon("DISK FAILED!\n")	
+					clickdisk(0)
+				}						
+			}				
+		};		
+	  });
+			  
+		
+	print_mon("6502 Version 1.0\n")  
+	print_mon("RUN, STEP,N, CLEAR, A, V\n\n") 
+		
+	/* VDU screen test */
+	for (i=0; i<512; i++) put_byte(0x8000+i,0);
+
+</script>
+<script src="./atom_roms.js"></script>
+<script src="./dos_rom.js"></script>
+<script>
+
+labels["OSWRCH"]=0xfff4
+labels["OSCRLF"]=0xffed
+labels["OSASCI"]=0xffe9
+labels["OSECHO"]=0xffe6
+labels["PORTA"]=0xb000
+labels["PORTB"]=0xb001
+labels["PORTC"]=0xb002
+
+/* seed random number generator */
+put_byte(0x0008,1)
+put_byte(0x0009,2)
+put_byte(0x000a,3)
+put_byte(0x000b,4)
+
+
+print_prompt()
+
+do_action("RUN")
+</script>
+
+</body>
+

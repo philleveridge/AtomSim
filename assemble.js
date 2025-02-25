@@ -97,12 +97,21 @@ function checkopc(x) {
 }
 
 function hex2(dec) {
-	return ("00" + dec.toString(16)).substr(-2)
+	try {
+		return ("00" + dec.toString(16)).substr(-2)
+	}
+	catch(err) {
+		return "XX"
+	}
 }
 
 function hex4(dec) {
-				
-	return ("0000" + dec.toString(16)).substr(-4)
+	try {				
+		return ("0000" + dec.toString(16)).substr(-4)
+	}
+	catch(err) {
+		return "XXXX"
+	}
 }
 
 function hex4e(dec) {	
@@ -137,7 +146,11 @@ function isNumeric(str) {
 	if (str=="") return false
 	if (str in labels)
 			return true
-			
+
+	if (str.lngth==3 && str[0]=="'" && str[2]=="'")
+        return True
+
+	
 	if (str.substr(0,1)=="$")
 	{
 		for (i=1; i<str.length; i++)
@@ -160,6 +173,9 @@ function str2num(str) {
 	if (isLabel(str)) {
 		return 0 // not defined (yet)
 	}
+	
+	if (str.length==3 && str[0]=="'" && str[2]=="'")
+        return str[1]
 			
 	if (str.substr(0,1)=="$")
 	{
@@ -182,16 +198,21 @@ function str2num(str) {
 	return (Number(str))
 }	
 
+function put_byte_s(a,b) {
+	mem[a&0xFFFF]=b&0xFF
+}
+
+
 function assemble(mloc, str, pass=2) {
 	var i,txt, z
 	
 	if (str.indexOf(";")>=0) {
 		txt = str.split(";")
-		str=txt[0]
+		str=txt[0].trim()
 	}
 	if (str=="")
 		return mloc
-	txt = str.split(" ")
+	txt = str.trim().split(/ +/)
 	for (i=0; i<txt.length; i++) {
 			
 		if (txt[i].substr(-1)==":") {
@@ -203,19 +224,62 @@ function assemble(mloc, str, pass=2) {
 				return mloc
 		}
 		
+		if (txt[i].toUpperCase()=="#DEFINE") {
+			labels[txt[i+1]] = str2num(txt[i+2])
+			return mloc
+		}
+		
 		if (txt[i].toUpperCase()==".WORD") {
-			/* label: */
 			w = str2num(txt[i+1])
 			i+=1
-			put_byte(mloc,w &0xFF)
-			put_byte(mloc+1,(w &0xFF00)>>8)
+			put_byte_s(mloc,w &0xFF)
+			put_byte_s(mloc+1,(w &0xFF00)>>8)
 			mloc += 2
 			return mloc
+		}
+				
+		if (txt[i].toUpperCase()==".BYTE") {
+			i +=1
+			do {
+				if (txt[i]!="") {
+					w = str2num(txt[i])
+					put_byte_s(mloc,w &0xFF)
+					mloc += 1
+				}
+				i++
+			} while (i<txt.length)			
+			return mloc
+		}
+		
+		if (txt[i].toUpperCase()==".STRING" ) {
+			i +=1
+			txt=str.trim().split(/'|"/)
+			if (txt.length==3) {
+                j=0
+                while (j<txt[1].length) {
+                    ch = txt[1].substr(j,1)
+                    if (ch=='\\' && txt[1].substr(j+1,1)=='n') {
+                        ch=13
+                        j=j+1
+					}
+                    if (ch=='\\' && txt[1].substr(j+1,1)=='\\') {
+                        ch='\\'
+                        j=j+1
+					}
+					ch=txt[1].substr(j,1)
+					put_byte_s(mloc,ch.charCodeAt()&0xFF)
+                    mloc += 1
+                    j=j+1
+				}
+                put_byte_s(mloc, 0)
+                mloc += 1
+                return mloc
+			}			
 		}
 		
 		if (txt[i].toUpperCase()==".ORG") {
 			ORG = str2num(txt[i+1])
-			return ORG
+			return 0
 		}
 		var op,mb	
 
@@ -226,7 +290,7 @@ function assemble(mloc, str, pass=2) {
 		if (z >=0 ) {	
 			// legal instruction ILIST[z]
 			if (ILIST[z].length==2) {
-				if (pass==2) put_byte(mloc,ILIST[z][1])
+				if (pass==2) put_byte_s(mloc,ILIST[z][1])
 				mloc += 1
 			}
 			else {
@@ -243,6 +307,10 @@ function assemble(mloc, str, pass=2) {
 						// should be #nn
 						if (s[0]=="#" ) {
 							mb=str2num(s.substr(1))
+							bc=2
+						}
+						if (s[0]=="\"" && s[2]=="\"" ) {
+							mb=s.substr(1).charCodeAt()
 							bc=2
 						}
 						break							
@@ -321,13 +389,13 @@ function assemble(mloc, str, pass=2) {
 					}
 					if (bc>0) {
 						op =ILIST[z][c+1]
-						if (pass==2) put_byte(mloc,op)
+						if (pass==2) put_byte_s(mloc,op)
 						mloc += 1
 						if (bc>1) {
-							if (pass==2) put_byte(mloc,mb&0xff)
+							if (pass==2) put_byte_s(mloc,mb&0xff)
 							mloc += 1
 							if (bc > 2) {
-								if (pass==2) put_byte(mloc,(mb&0xff00)>>8)
+								if (pass==2) put_byte_s(mloc,(mb&0xff00)>>8)
 								mloc += 1
 							}
 						}
@@ -422,9 +490,10 @@ function disassemble(mloc) {
 
 function loadassemble(str, n) {
 	ORG=n
-	var st=str.split("\n")
+	var st=str.split(/\r\n|\r|\n/)
 	
 	q=n
+	startaddr=n
 	
 	labels={} // reset dictionary
 	
@@ -433,10 +502,8 @@ function loadassemble(str, n) {
 	{
 		// 1st pass
 		var q = assemble(q, st[j], 1)
-	}	
-	
-	for (var key in labels)
-		print_mon(key +"... "+ labels[key]+"\n")
+		if (q==0) q=ORG;
+	}		
 	
 	print_mon("2nd pass\n")
 	for (var j=0; j<st.length; j++) 
@@ -446,20 +513,73 @@ function loadassemble(str, n) {
 		if (q < 0) {
 			print_mon("ASSMB ERROR line " + j +"\n")
 			return			
-		} else { 
+		} else if (q==0){ 
+		  startaddr=ORG
+		  n=ORG
+		
+		} else {
 			b=""
-			for (i=0;i<q-n;i++)
+			for (let i=0;i<q-n;i++)
 				b += hex2(get_byte(n+i)) + " "
 			
-			b  =  (b + "        ").substr(0,9)
+			//b  =  (b + "        ").substr(0,9)				
+			//print_mon(hex4(n) + " " + b + st[j] + "\n")
 			
-				
-			print_mon(hex4(n) + " " + b + st[j] + "\n")
+			let i=n
+            let t=st[j]
+            if (t != "") {
+                while (i<=q) {
+                    nb = (b + "         ").substr(0,9)
+                    if (nb+t != "         " )
+                        print_mon(hex4(i) + " " + nb + t + "\n" )  
+                    i=i+3
+                    b=b.substr(9)
+                    t=""
+				}
+			}		
+					
 			n=q
 		}
 	}
-	for (var key in labels)
-		print_mon(key +"... "+ labels[key]+"\n")
+	endaddr=n
+	for (var key in labels) {
+		let str = key + "          "
+		print_mon(str.substring(0,13) + hex4(labels[key])+"\n")
+	}
 	
+
+	if (startaddr==0x4000) {
+		str = "CODE\n5 GOS.4000;END\n10<";
+		for (i=0;i<(endaddr-startaddr);i++) 
+			str = str+hex2(get_byte(startaddr+i));
+		str += ">\n"
+		print_mon("BOOT: "+hex4(startaddr) +" to " +hex4(endaddr) + "\n" + str.toUpperCase()+"\n")
+	}
+	else if (startaddr==0xA000) {
+		n=10
+		cstr = "CODE\n5 GOS.4000;LINK #4000\n";
+		cstr += "8<A9A08555A20086528654A5128553A152E652C97BD0F8A152205140C97DF038C90DD00C2051402051402051404C1640207EF8B0230A0A0A0A8580A152205140207EF8B01305808154E654D0CAE6554C1640E652D002E65360>\n"
+		str = n +"{"
+		for (i=0;i<(endaddr-startaddr);i++) {
+			str += hex2(get_byte(startaddr+i));
+			if (str.length>(60*n/10)) {n=n+10; str += "\n" + n + " "}
+		}
+		str +="}\n"
+		str = cstr + str
+		print_mon("UTILITY: "+hex4(startaddr) +" to " +hex4(endaddr) + "\n" + str.toUpperCase()+"\n")
+	}
+	else 
+	{
+		n=10
+		str = n +"{"+hex2(startaddr/256)+hex2(startaddr%256);
+		for (i=0;i<(endaddr-startaddr);i++) {
+			str = str+hex2(get_byte(startaddr+i));
+			if (str.length>(60*n/10)) {n=n+10; str += "\n" + n + " "}
+		}
+		str +="}\n"
+		print_mon("GENERAL: "+hex4(startaddr) +" to " +hex4(endaddr) + "\n" + str.toUpperCase()+ "\n")
+	}
+	
+
 	return ORG // start address
 }
